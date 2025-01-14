@@ -1,5 +1,4 @@
-using LinearAlgebra
-
+# This file contains utility functions used in the package.
 """
     generate_data(n::Int; μ=0.0, σ=1.0) = randn(n) * σ .+ μ
     Generates n random numbers from a normal distribution with mean μ and standard deviation σ.

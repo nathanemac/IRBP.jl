@@ -97,7 +97,7 @@ end
 
 p = 0.5
 radius = 2.0
-point_original = [-4.0, -4.0]
+point_original = [-4.0, -2.0]
 
 # Lance la projection IRBP (qui renvoie aussi x_list)
 point_projected, dual, iters, elapsed, x_list =

@@ -1,11 +1,8 @@
 module IRBP
 
-"""
-    hi = hello_world()
-A simple function to return "Hello, World!"
-"""
-function hello_world()
-    return "Hello, World!"
-end
+using LinearAlgebra
+include("utils.jl")
+include("irbp_alg.jl")
+
 
 end
