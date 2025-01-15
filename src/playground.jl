@@ -1,4 +1,4 @@
-include("utils.jl")
+include("irbp_utils.jl")
 include("irbp_alg.jl")
 using Plots
 # -----------------------------------------
@@ -145,3 +145,16 @@ xlabel!(plt, "x1")
 ylabel!(plt, "x2")
 
 display(plt)
+
+
+##########################################
+# Tests de prox!
+##########################################
+
+h = ProjLpBall(1.0, 0.5, 2.0)
+q = [3.0, 2.0]
+y = similar(q)
+ν = 0.5
+context = AlgorithmContextCallback(dualGap = 1e-4)
+callback = @cfunction(x -> nothing, Cvoid, (Ptr{Cvoid},))
+prox!(y, h, q, ν, context, callback)

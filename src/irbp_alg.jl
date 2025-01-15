@@ -1,5 +1,11 @@
 """
-    get_sol(point_to_be_projected, p, radius)
+    irbp_alg(
+    point_to_be_projected::Vector{Float64},
+    p::Float64,
+    radius::Float64;
+    dualGap = 1e-8,
+    maxIter = 1000,
+)
 
 This function initializes an IRBP iteration for projecting a point onto the p-ball of radius `radius`.
 It returns the projected point `x_irbp`, the dual variable `dual`, and the total running time.
@@ -14,7 +20,7 @@ Returns:
   - dual      : The dual variable from the IRBP solver.
   - runningTime : Time elapsed (in seconds) during the IRBP process.
 """
-function IRBP(
+function irbp_alg(
     point_to_be_projected::Vector{Float64},
     p::Float64,
     radius::Float64;
