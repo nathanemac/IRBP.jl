@@ -245,7 +245,7 @@ function prox!(
 )
     q_shifted = q .+ ψ.xk .+ ψ.sj
     x_irbp, dual_val, iters, _ =
-        irbp_alg(q_shifted, ψ.h.p, h.radius, dualGap = context.dualGap, maxIter = 1000)
+        irbp_alg(q_shifted, ψ.h.p, ψ.h.radius, dualGap = context.dualGap, maxIter = 1000)
     y .= x_irbp .- ψ.xk .- ψ.sj
     # add the number of iterations in prox to the context object
     push!(context.prox_stats[3], iters)
