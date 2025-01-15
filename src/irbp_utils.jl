@@ -118,7 +118,7 @@ end
     This function is the "h" function in the RegularizedOptimization.jl framework.
 """
 function (h::ProjLpBall)(x::AbstractVector)
-    pnorm(x, h.p)^p <= h.radius ? 0.0 : Inf
+    pnorm(x, h.p)^(h.p) <= h.radius ? 0.0 : Inf
 end
 
 mutable struct ShiftedProjLpBall{
@@ -166,8 +166,8 @@ shifted(
     ShiftedProjLpBall(ψ.h, ψ.xk, sj, true)
 
 # Functions to get the name, expression, and parameters of the function
-fun_name(ψ::ShiftedProjLpBall) = "shifted projection on the Lp ball"
-fun_expr(ψ::ShiftedProjLpBall) = "t ↦ λ * χ(xk + sj + t ∈ LpBall)"
+fun_name(ψ::ShiftedProjLpBall) = "shifted Lp norm ball indicator with 0 < p < 1"
+fun_expr(ψ::ShiftedProjLpBall) = "t ↦ χ({‖xk + sj + t‖ₚ ≤ r})"
 fun_params(ψ::ShiftedProjLpBall) = "xk = $(ψ.xk)" * " "^14 * "sj = $(ψ.sj)"
 
 """
@@ -192,7 +192,7 @@ end
 
 """
     prox!(y, h::ProjLpBall, q, ν, ctx_ptr, callback)
-    Evaluates inexactly the proximity operator of a Lp norm object.
+    Evaluates inexactly the proximity operator of a Lp ball object.
     The duality gap at the solution is guaranteed to be less than `dualGap`.
 
     Inputs:
@@ -214,6 +214,39 @@ function prox!(
     x_irbp, dual_val, iters, _ =
         irbp_alg(q, h.p, h.radius, dualGap = context.dualGap, maxIter = 1000)
     y .= x_irbp
+    # add the number of iterations in prox to the context object
+    push!(context.prox_stats[3], iters)
+
+    return y
+end
+
+
+
+"""
+    prox!(y, h::ShiftedProjLpBall, q, ν, ctx_ptr, callback)
+    Evaluates inexactly the proximity operator of a shifted LpBall object.
+    The duality gap at the solution is guaranteed to be less than `dualGap`.
+
+    Inputs:
+    - `y`: Array in which to store the result.
+    - `ψ`: ShiftedProjLpBall object.
+    - `q`: Vector to which the proximity operator is applied.
+    - `ν`: Scaling factor.
+    - `ctx_ptr`: Pointer to the context object.
+    - `callback`: Pointer to the callback function.
+"""
+function prox!(
+    y::AbstractArray,
+    ψ::ShiftedProjLpBall,
+    q::AbstractArray,
+    ν::Real,
+    context::AlgorithmContextCallback,
+    callback::Ptr{Cvoid};
+)
+    q_shifted = q .+ ψ.xk .+ ψ.sj
+    x_irbp, dual_val, iters, _ =
+        irbp_alg(q_shifted, ψ.h.p, h.radius, dualGap = context.dualGap, maxIter = 1000)
+    y .= x_irbp .- ψ.xk .- ψ.sj
     # add the number of iterations in prox to the context object
     push!(context.prox_stats[3], iters)
 

@@ -152,9 +152,10 @@ display(plt)
 ##########################################
 
 h = ProjLpBall(1.0, 0.5, 2.0)
+ψ = shifted(h, [1.0, 1.5])
 q = [3.0, 2.0]
 y = similar(q)
 ν = 0.5
 context = AlgorithmContextCallback(dualGap = 1e-4)
 callback = @cfunction(x -> nothing, Cvoid, (Ptr{Cvoid},))
-prox!(y, h, q, ν, context, callback)
+prox!(y, ψ, q, ν, context, callback)
