@@ -93,6 +93,67 @@ function get_weightedl1_ball_projection(point_to_be_projected, weights, radius)
     end
 end
 
+"""
+    plot_weightedl1_ball_2D(weights, radius; color=:blue)
+    Trace la boule L1 pondérée définie par
+       w1*|x1| + w2*|x2| <= radius
+    (forme de losange en 2D).
+"""
+function plot_weightedl1_ball_2D(weights, radius; color = :blue)
+    w1, w2 = weights
+
+    # Les 4 sommets du losange
+    c1 = (radius / w1, 0.0)
+    c2 = (0.0, radius / w2)
+    c3 = (-radius / w1, 0.0)
+    c4 = (0.0, -radius / w2)
+
+    # On ferme le polygone en bouclant sur le premier sommet
+    x_vals = [c1[1], c2[1], c3[1], c4[1], c1[1]]
+    y_vals = [c1[2], c2[2], c3[2], c4[2], c1[2]]
+
+    plt = plot(
+        x_vals,
+        y_vals,
+        seriestype = :shape,                 # pour dessiner la forme remplie
+        fillalpha = 0.2,
+        fillcolor = color,
+        linecolor = color,
+        legend = false,
+        aspect_ratio = :equal,
+        title = "Projection sur la boule L1 pondérée",
+    )
+    return plt
+end
+
+function plot_lp_ball_2D(p::Float64, radius::Float64; color = :blue, npoints = 200)
+    thetas = range(0, 2π, length = npoints)
+    x_coords = similar(thetas)
+    y_coords = similar(thetas)
+
+    for (i, t) in enumerate(thetas)
+        alpha = radius / (abs(cos(t))^p + abs(sin(t))^p)
+        x1 = sign(cos(t)) * (alpha * abs(cos(t))^p)^(1 / p)
+        x2 = sign(sin(t)) * (alpha * abs(sin(t))^p)^(1 / p)
+        x_coords[i] = x1
+        y_coords[i] = x2
+    end
+
+    plt = plot(
+        x_coords,
+        y_coords,
+        linecolor = color,
+        fillalpha = 0.15,
+        fillrange = 0,
+        fillcolor = color,
+        label = "Lp pseudo-ball (p=$p)",
+        aspect_ratio = :equal,
+        legend = :topleft,
+    )
+    return plt
+end
+
+
 
 #################################################################
 # 2. Functions used to communicate with RegularizedOptimization #
@@ -115,10 +176,11 @@ end
     (h::ProjLpBall)(x::AbstractVector)
     Indicator function for the p-ball.
     Returns zero if the point is inside the ball, Inf otherwise.
+    A small ϵ is added to the radius to avoid numerical issues.
     This function is the "h" function in the RegularizedOptimization.jl framework.
 """
-function (h::ProjLpBall)(x::AbstractVector)
-    pnorm(x, h.p)^(h.p) <= h.radius ? 0.0 : Inf
+function (h::ProjLpBall)(x::AbstractVector; ϵ::Real = eps()^(1 / 2))
+    pnorm(x, h.p)^(h.p) <= (h.radius + ϵ) ? 0.0 : Inf
 end
 
 mutable struct ShiftedProjLpBall{
@@ -212,7 +274,7 @@ function prox!(
     callback::Ptr{Cvoid};
 )
     x_irbp, dual_val, iters, _ =
-        irbp_alg(q, h.p, h.radius, dualGap = context.dualGap, maxIter = 1000)
+        irbp_alg(q, h.p, h.radius, context, dualGap = context.dualGap, maxIter = 1000)
     y .= x_irbp
     # add the number of iterations in prox to the context object
     push!(context.prox_stats[3], iters)
@@ -244,11 +306,16 @@ function prox!(
     callback::Ptr{Cvoid};
 )
     q_shifted = q .+ ψ.xk .+ ψ.sj
-    x_irbp, dual_val, iters, _ =
-        irbp_alg(q_shifted, ψ.h.p, ψ.h.radius, dualGap = context.dualGap, maxIter = 1000)
-    y .= x_irbp .- ψ.xk .- ψ.sj
+    x_irbp, dual_val, iters, _ = irbp_alg(
+        q_shifted,
+        ψ.h.p,
+        ψ.h.radius,
+        context,
+        dualGap = context.dualGap,
+        maxIter = 100,
+    )
+    y .= x_irbp .- context.shift
     # add the number of iterations in prox to the context object
     push!(context.prox_stats[3], iters)
-
     return y
 end
