@@ -305,13 +305,11 @@ function prox!(
     context::AlgorithmContextCallback,
     callback::Ptr{Cvoid};
 )
-    q_shifted = q .+ ψ.xk .+ ψ.sj
-    best_ξk = Inf
-    best_x = similar(q)
-    y_inter = similar(q)
-    best_iters = 0
+    q_shifted = q .+ context.shift
+    cond = false
+    k = 0
 
-    for _ = 1:context.iters_prox_projLp
+    while (cond == false) && (k ≤ context.iters_prox_projLp)
         # compute solution of the proximal operator of the shifted Lp ball
         x_irbp, dual_val, iters, _ = irbp_alg(
             q_shifted,
@@ -323,20 +321,21 @@ function prox!(
         )
 
         # compute model reduction
-        y_inter .= x_irbp .- context.shift #TODO on peut le faire en utilisant s_k_unshifted je pense
-        ξk = context.hk - context.mk(y_inter) + max(1, abs(context.hk)) * 10 * eps()
+        context.s_k_unshifted .= x_irbp .- context.shift
+        ξk =
+            context.hk - context.mk(context.s_k_unshifted) +
+            max(1, abs(context.hk)) * 10 * eps()
 
         # update best solution
-        if ξk ≤ best_ξk && ξk > 0
-            best_ξk = ξk
-            best_x .= y_inter
-            best_iters = iters
+        if ξk > 0
+            cond = true
         end
+        k += 1
     end
-    y .= best_x
+    y .= context.s_k_unshifted
     # add the number of iterations in prox to the context object
-    push!(context.prox_stats[3], best_iters)
-    best_ξk == Inf ?
+    push!(context.prox_stats[3], k)
+    cond == false ?
     println(
         "Warning: Lp ball - prox computation could not find a feasible solution after $(context.iters_prox_projLp) runs.",
     ) : nothing # println("Lp ball - prox computation found a feasible solution : ξk = $best_ξk")
