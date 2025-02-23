@@ -23,7 +23,8 @@ Returns:
 function irbp_alg(
     point_to_be_projected::Vector{Float64},
     p::Float64,
-    radius::Float64;
+    radius::Float64,
+    context::AlgorithmContextCallback;
     dualGap = 1e-8,
     maxIter = 1000,
 )
@@ -47,7 +48,8 @@ function irbp_alg(
         point_to_be_projected,
         p,
         radius,
-        epsilon_ini;
+        epsilon_ini,
+        context;
         tau = 1.1,
         tol = dualGap,
         MAX_ITER = maxIter,
@@ -86,7 +88,8 @@ function get_lp_ball_projection(
     point_to_be_projected::Vector{Float64},
     p::Float64,
     radius::Float64,
-    epsilon::Vector{Float64};
+    epsilon::Vector{Float64},
+    context::AlgorithmContextCallback;
     tau::Float64 = 1.1,
     tol::Float64 = 1e-8,
     MAX_ITER::Int = 1000,
@@ -96,6 +99,15 @@ function get_lp_ball_projection(
     if pnorm(point_to_be_projected, p)^p <= radius
         return point_to_be_projected, 0.0, 0, 0.0, [point_to_be_projected]
     end
+
+    # plt = plot_lp_ball_2D(p, radius; color = :blue, npoints = 5000)
+    # scatter!(
+    #     plt,
+    #     [point_to_be_projected[1]],
+    #     [point_to_be_projected[2]],
+    #     color = :red,
+    #     label = "Original point ($(point_to_be_projected[1]), $(point_to_be_projected[2]))"
+    #     )
 
     # Problem dimension
     n = length(point_to_be_projected)
@@ -127,6 +139,10 @@ function get_lp_ball_projection(
     x_list = Vector{Float64}[]
     push!(x_list, starting_point)
 
+    alpha_res = Inf
+    beta_res = Inf
+    ξk = Inf
+
     # Start measuring time
     timeStart = time()
 
@@ -141,15 +157,30 @@ function get_lp_ball_projection(
                 1,
             )
         beta_res = abs(pnorm(starting_point, p)^p - radius)
+        if context.flag_projLp == 1
+            if max(alpha_res, beta_res) <
+               tol * max(max(residual_alpha0, residual_beta0), 1.0) || cnt > MAX_ITER
+                timeEnd = time()
+                x_final = signum_vals .* starting_point  # Restore original sign
+                push!(x_list, x_final)
+                return x_final, lamb, cnt, (timeEnd - timeStart), x_list
+            end
+        else
+            # Stopping condition that respects our assumptions on inexact prox computation
+            delta_k = max(alpha_res, beta_res)
+            s_k = signum_vals .* starting_point
 
-        # Stopping criterion
-        if max(alpha_res, beta_res) <
-           tol * max(max(residual_alpha0, residual_beta0), 1.0) || cnt > MAX_ITER
-            timeEnd = time()
-            x_final = signum_vals .* starting_point  # Restore original sign
-            push!(x_list, x_final)
-            return x_final, lamb, cnt, (timeEnd - timeStart), x_list
+            @. context.s_k_unshifted = s_k - context.shift
+            ξk =
+                context.hk - context.mk(context.s_k_unshifted) +
+                max(1, abs(context.hk)) * 10 * eps()
+            if delta_k ≤ (1 - context.κξ) / context.κξ * ξk
+                timeEnd = time()
+                push!(x_list, s_k)
+                return s_k, lamb, cnt, (timeEnd - timeStart), x_list
+            end
         end
+
 
         # Step 3 in IRBP: compute the weights
         # weights_i = p / (|x_i| + epsilon)^(1-p)
@@ -185,5 +216,33 @@ function get_lp_ball_projection(
         # Step 6 in IRBP: update the iterate
         starting_point = copy(x_new)
         push!(x_list, starting_point)
+
+        # if cnt % 10 == 0
+        #     x_signed = signum_vals .* starting_point
+        #     scatter!(
+        #         plt,
+        #         [x_signed[1]],
+        #         [x_signed[2]],
+        #         color = :green,
+        #         label = "iterate at $(cnt) : ($(x_signed[1]), $(x_signed[2]))"
+        #         )
+        # end
     end
+
+    # println("IRBP did not converge after $MAX_ITER iterations with α: $alpha_res, β: $beta_res and criterion: $((1 - context.κξ) / context.κξ * ξk)")
+    # println("hk = $(context.hk), mk = $(context.mk(context.s_k_unshifted))")
+    timeEnd = time()
+    x_final = signum_vals .* starting_point
+    push!(x_list, x_final)
+
+
+    # scatter!(
+    #     plt,
+    #     [x_final[1]],
+    #     [x_final[2]],
+    #     color = :green,
+    #     label = "Final point ($(x_final[1]), $(x_final[2]))"
+    #     )
+    # display(plt)
+    return x_final, lamb, cnt, (timeEnd - timeStart), x_list
 end

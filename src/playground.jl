@@ -1,6 +1,5 @@
 include("irbp_utils.jl")
 include("irbp_alg.jl")
-using Plots
 # -----------------------------------------
 # 1. Fonction de tracé de la boule L1 pondérée
 # -----------------------------------------
