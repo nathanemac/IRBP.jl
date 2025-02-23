@@ -158,6 +158,11 @@ end
 #################################################################
 # 2. Functions used to communicate with RegularizedOptimization #
 #################################################################
+
+"""
+    ProjLpBall(λ, p, radius)
+    Constructor for the ProjLpBall object.
+"""
 mutable struct ProjLpBall{R<:Real}
     λ::R         # Regularization parameter, equal to 1 in this case
     p::R         # p-norm with 0 < p < 1
