@@ -313,6 +313,7 @@ function prox!(
     q_shifted = q .+ context.shift
     cond = false
     k = 0
+    sum_iters = 0
 
     while (cond == false) && (k ≤ context.iters_prox_projLp)
         # compute solution of the proximal operator of the shifted Lp ball
@@ -324,6 +325,7 @@ function prox!(
             dualGap = context.dualGap,
             maxIter = 100,
         )
+        sum_iters += iters
 
         # compute model reduction
         context.s_k_unshifted .= x_irbp .- context.shift
@@ -339,7 +341,7 @@ function prox!(
     end
     y .= context.s_k_unshifted
     # add the number of iterations in prox to the context object
-    push!(context.prox_stats[3], k)
+    push!(context.prox_stats[3], sum_iters)
     cond == false ?
     println(
         "Warning: Lp ball - prox computation could not find a feasible solution after $(context.iters_prox_projLp) runs.",
