@@ -153,27 +153,63 @@ function plot_lp_ball_2D(p::Float64, radius::Float64; color = :blue, npoints = 2
     return plt
 end
 
-
-
 #################################################################
 # 2. Functions used to communicate with RegularizedOptimization #
 #################################################################
+mutable struct IRBPContext
+    iters_prox_projLp::Int64
+    flag_projLp::Int64
+    κξ::Float64
+    dualGap::Float64
+    prox_stats::Any
+    shift::Vector{Float64}
+    s_k_unshifted::Vector{Float64}
+    hk::Float64
+    mk::ModelFunction
+end
+
+# Fonction that creates an IRBPContext object
+function IRBPContext(
+    n::Int64;
+    iters_prox_projLp = 100,
+    flag_projLp = 0,
+    κξ = 0.75,
+    dualGap = 1e-8,
+)
+    shift = zeros(n)
+    s_k_unshifted = zeros(n)
+    hk = 0.0
+    mk = ModelFunction(zeros(n), x -> x)
+    prox_stats = [0.0, [], []]
+    return IRBPContext(
+        iters_prox_projLp,
+        flag_projLp,
+        κξ,
+        dualGap,
+        prox_stats,
+        shift,
+        s_k_unshifted,
+        hk,
+        mk,
+    )
+end
 
 """
-    ProjLpBall(λ, p, radius)
+    ProjLpBall(λ, p, radius, context)
     Constructor for the ProjLpBall object.
 """
 mutable struct ProjLpBall{R<:Real}
     λ::R         # Regularization parameter, equal to 1 in this case
     p::R         # p-norm with 0 < p < 1
     radius::R    # Radius of the p-ball
+    context::IRBPContext # Context object
 
-    function ProjLpBall(λ::R, p::R, radius::R) where {R<:Real}
+    function ProjLpBall(λ::R, p::R, radius::R, context::IRBPContext) where {R<:Real}
         @assert p < 1.0 "The p-norm must be < 1.0"
         @assert p > 0.0 "The p-norm must be > 0.0"
         @assert radius > 0.0 "The radius must be > 0."
         @assert λ > 0.0 "The λ parameter must be > 0."
-        return new{R}(λ, p, radius)
+        return new{R}(λ, p, radius, context)
     end
 end
 
@@ -258,7 +294,23 @@ function (ψ::ShiftedProjLpBall)(y::AbstractVector)
 end
 
 """
-    prox!(y, h::ProjLpBall, q, ν, ctx_ptr, callback)
+    update_prox_context!(solver, ψ, T::Val{<:ShiftedProjLpBall})
+
+Updates the context of a ShiftedProjLpBall object before calling prox!.
+
+# Arguments
+- `solver`: solver object
+- `ψ`: ShiftedProjLpBall object
+- `T`: Type of the object
+"""
+function update_prox_context!(solver, ψ, T::Val{<:ShiftedProjLpBall})
+    ψ.h.context.mk.∇f = solver.∇fk
+    ψ.h.context.mk.ψ = d -> ψ(d)  # Use the evaluation function of ψ instead of the object itself
+    @. ψ.h.context.shift = ψ.xk + ψ.sj
+end
+
+"""
+    prox!(y, h::ProjLpBall, q, ν)
     Evaluates inexactly the proximity operator of a Lp ball object.
     The duality gap at the solution is guaranteed to be less than `dualGap`.
 
@@ -267,23 +319,16 @@ end
     - `h`: ProjLpBall object.
     - `q`: Vector to which the proximity operator is applied.
     - `ν`: Scaling factor.
-    - `ctx_ptr`: Pointer to the context object.
-    - `callback`: Pointer to the callback function.
 """
-function prox!(
-    y::AbstractArray,
-    h::ProjLpBall,
-    q::AbstractArray,
-    ν::Real,
-    context::AlgorithmContextCallback,
-    callback::Ptr{Cvoid};
-)
+function prox!(y::AbstractArray, h::ProjLpBall, q::AbstractArray, ν::Real)
+    ctx_projLpflag = h.context.flag_projLp
+    h.context.flag_projLp = 1 # enforce regular IRBP stopping criterion : if prox! is called on h, the context is not created yet.
     x_irbp, dual_val, iters, _ =
-        irbp_alg(q, h.p, h.radius, context, dualGap = context.dualGap, maxIter = 1000)
+        irbp_alg(q, h.p, h.radius, h.context, dualGap = h.context.dualGap, maxIter = 1000)
     y .= x_irbp
     # add the number of iterations in prox to the context object
-    push!(context.prox_stats[3], iters)
-
+    push!(h.context.prox_stats[3], iters)
+    h.context.flag_projLp = ctx_projLpflag # restore the original flag_projLp value
     return y
 end
 
@@ -299,17 +344,9 @@ end
     - `ψ`: ShiftedProjLpBall object.
     - `q`: Vector to which the proximity operator is applied.
     - `ν`: Scaling factor.
-    - `ctx_ptr`: Pointer to the context object.
-    - `callback`: Pointer to the callback function.
 """
-function prox!(
-    y::AbstractArray,
-    ψ::ShiftedProjLpBall,
-    q::AbstractArray,
-    ν::Real,
-    context::AlgorithmContextCallback,
-    callback::Ptr{Cvoid};
-)
+function prox!(y::AbstractArray, ψ::ShiftedProjLpBall, q::AbstractArray, ν::Real)
+    context = ψ.h.context
     q_shifted = q .+ context.shift
     cond = false
     k = 0
@@ -323,7 +360,7 @@ function prox!(
             ψ.h.radius,
             context,
             dualGap = context.dualGap,
-            maxIter = 100,
+            maxIter = 1000,
         )
         sum_iters += iters
 
@@ -348,27 +385,3 @@ function prox!(
     ) : nothing # println("Lp ball - prox computation found a feasible solution : ξk = $best_ξk")
     return y
 end
-
-# function prox!(
-#     y::AbstractArray,
-#     ψ::ShiftedProjLpBall,
-#     q::AbstractArray,
-#     ν::Real,
-#     context::AlgorithmContextCallback,
-#     callback::Ptr{Cvoid};
-# )
-
-#     q_shifted = q .+ ψ.xk .+ ψ.sj
-#     x_irbp, dual_val, iters, _ = irbp_alg(
-#         q_shifted,
-#         ψ.h.p,
-#         ψ.h.radius,
-#         context,
-#         dualGap = context.dualGap,
-#         maxIter = 100,
-#     )
-#     y .= x_irbp .- context.shift
-#     # add the number of iterations in prox to the context object
-#     push!(context.prox_stats[3], iters)
-#     return y
-# end

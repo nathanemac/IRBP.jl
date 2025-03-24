@@ -24,7 +24,7 @@ function irbp_alg(
     point_to_be_projected::Vector{Float64},
     p::Float64,
     radius::Float64,
-    context::AlgorithmContextCallback;
+    context::IRBPContext;
     dualGap = 1e-8,
     maxIter = 1000,
 )
@@ -89,7 +89,7 @@ function get_lp_ball_projection(
     p::Float64,
     radius::Float64,
     epsilon::Vector{Float64},
-    context::AlgorithmContextCallback;
+    context::IRBPContext;
     tau::Float64 = 1.1,
     tol::Float64 = 1e-8,
     MAX_ITER::Int = 1000,
@@ -157,7 +157,7 @@ function get_lp_ball_projection(
                 1,
             )
         beta_res = abs(pnorm(starting_point, p)^p - radius)
-        if context.flag_projLp == 1
+        if context.flag_projLp == 1 # original IRBP criterion
             if max(alpha_res, beta_res) <
                tol * max(max(residual_alpha0, residual_beta0), 1.0) || cnt > MAX_ITER
                 timeEnd = time()
@@ -165,8 +165,7 @@ function get_lp_ball_projection(
                 push!(x_list, x_final)
                 return x_final, lamb, cnt, (timeEnd - timeStart), x_list
             end
-        else
-            # Stopping condition that respects our assumptions on inexact prox computation
+        else # stopping condition that respects our assumptions on inexact prox computation
             delta_k = max(alpha_res, beta_res)
             s_k = signum_vals .* starting_point
 
