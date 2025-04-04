@@ -180,7 +180,7 @@ function IRBPContext(
     s_k_unshifted = zeros(n)
     hk = 0.0
     mk = ModelFunction(zeros(n), x -> x)
-    prox_stats = [0.0, [], []]
+    prox_stats = zeros(3)
     return IRBPContext(
         iters_prox_projLp,
         flag_projLp,
@@ -294,16 +294,18 @@ function (ψ::ShiftedProjLpBall)(y::AbstractVector)
 end
 
 """
-    update_prox_context!(solver, ψ, T::Val{<:ShiftedProjLpBall})
+    update_prox_context!(solver, stats, ψ, T::Val{<:ShiftedProjLpBall})
 
 Updates the context of a ShiftedProjLpBall object before calling prox!.
 
 # Arguments
 - `solver`: solver object
+- `stats`: stats object
 - `ψ`: ShiftedProjLpBall object
 - `T`: Type of the object
 """
-function update_prox_context!(solver, ψ, T::Val{<:ShiftedProjLpBall})
+function update_prox_context!(solver, stats, ψ, T::Val{<:ShiftedProjLpBall})
+    ψ.h.context.hk = stats.solver_specific[:nonsmooth_obj]
     ψ.h.context.mk.∇f = solver.∇fk
     ψ.h.context.mk.ψ = d -> ψ(d)  # Use the evaluation function of ψ instead of the object itself
     @. ψ.h.context.shift = ψ.xk + ψ.sj
@@ -327,7 +329,7 @@ function prox!(y::AbstractArray, h::ProjLpBall, q::AbstractArray, ν::Real)
         irbp_alg(q, h.p, h.radius, h.context, dualGap = h.context.dualGap, maxIter = 1000)
     y .= x_irbp
     # add the number of iterations in prox to the context object
-    push!(h.context.prox_stats[3], iters)
+    h.context.prox_stats[3] += iters
     h.context.flag_projLp = ctx_projLpflag # restore the original flag_projLp value
     return y
 end
@@ -378,7 +380,8 @@ function prox!(y::AbstractArray, ψ::ShiftedProjLpBall, q::AbstractArray, ν::Re
     end
     y .= context.s_k_unshifted
     # add the number of iterations in prox to the context object
-    push!(context.prox_stats[3], sum_iters)
+    context.prox_stats[3] += sum_iters
+
     cond == false ?
     println(
         "Warning: Lp ball - prox computation could not find a feasible solution after $(context.iters_prox_projLp) runs.",
