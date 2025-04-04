@@ -161,7 +161,7 @@ mutable struct IRBPContext
     flag_projLp::Int64
     κξ::Float64
     dualGap::Float64
-    prox_stats::Any
+    prox_stats::Vector{Int64}
     shift::Vector{Float64}
     s_k_unshifted::Vector{Float64}
     hk::Float64
@@ -180,7 +180,7 @@ function IRBPContext(
     s_k_unshifted = zeros(n)
     hk = 0.0
     mk = ModelFunction(zeros(n), x -> x)
-    prox_stats = zeros(3)
+    prox_stats = zeros(Int64, 3)
     return IRBPContext(
         iters_prox_projLp,
         flag_projLp,
