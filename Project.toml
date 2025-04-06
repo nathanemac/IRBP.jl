@@ -11,7 +11,7 @@ ProxTV = "925ea013-038b-5ab6-a1ab-e0849925e528"
 ShiftedProximalOperators = "d4fd37fa-580c-4e43-9b30-361c21aae263"
 
 [compat]
-JuliaFormatter = "1.0.62"
+JuliaFormatter = "1.0.62, 2"
 LinearAlgebra = "1.11.0"
 Plots = "1.40.9"
 ProxTV = "1.1.0"
