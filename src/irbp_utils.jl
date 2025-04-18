@@ -156,6 +156,42 @@ end
 #################################################################
 # 2. Functions used to communicate with RegularizedOptimization #
 #################################################################
+
+"""
+    ModelFunction{V,P}
+
+Helper structure to store the gradient and proximal term in a compact way.
+Used to avoid memory allocations when calling the proximal callback.
+
+# Fields
+- `∇f::V`: gradient of the function
+- `ψ::P`: proximal term
+"""
+mutable struct ModelFunction{V,P}
+    ∇f::V  # gradient
+    ψ::P   # proximal term
+end
+
+"""
+    ModelFunction(∇f::V, ψ::Function) where {V<:AbstractVector}
+
+Constructor for ModelFunction that creates a structure with a gradient vector and a proximal function.
+"""
+function ModelFunction(∇f::V, ψ::Function) where {V<:AbstractVector}
+    return ModelFunction{V,Function}(∇f, ψ)
+end
+
+"""
+    (m::ModelFunction)(d)
+
+Evaluate the model function at point d by computing the sum of:
+1. The inner product between the gradient and d
+2. The proximal term evaluated at d
+"""
+function (m::ModelFunction)(d)
+    return dot(m.∇f, d) + m.ψ(d)
+end
+
 mutable struct IRBPContext
     iters_prox_projLp::Int64
     flag_projLp::Int64
@@ -294,7 +330,7 @@ function (ψ::ShiftedProjLpBall)(y::AbstractVector)
 end
 
 """
-    update_prox_context!(solver, stats, ψ, T::Val{<:ShiftedProjLpBall})
+    update_prox_context!(solver, stats, ψ::ShiftedProjLpBall)
 
 Updates the context of a ShiftedProjLpBall object before calling prox!.
 
@@ -304,7 +340,7 @@ Updates the context of a ShiftedProjLpBall object before calling prox!.
 - `ψ`: ShiftedProjLpBall object
 - `T`: Type of the object
 """
-function update_prox_context!(solver, stats, ψ, T::Val{<:ShiftedProjLpBall})
+function update_prox_context!(solver, stats, ψ::ShiftedProjLpBall)
     ψ.h.context.hk = stats.solver_specific[:nonsmooth_obj]
     ψ.h.context.mk.∇f = solver.∇fk
     ψ.h.context.mk.ψ = d -> ψ(d)  # Use the evaluation function of ψ instead of the object itself
