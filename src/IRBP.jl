@@ -1,8 +1,8 @@
 module IRBP
 
 using LinearAlgebra
-using ProxTV
 using Plots
+using ProxTV
 
 # import functions that we extend from ShiftedProximalOperators and ProxTV
 import ShiftedProximalOperators.shift!
@@ -12,6 +12,7 @@ import ShiftedProximalOperators.prox!
 import ProxTV.shift!
 import ProxTV.shifted
 import ProxTV.prox!
+import ProxTV.update_prox_context!
 
 export ProjLpBall,
     ShiftedProjLpBall,
@@ -21,7 +22,10 @@ export ProjLpBall,
     get_weightedl1_ball_projection,
     prox!,
     shifted,
-    shift!
+    shift!,
+    IRBPContext,
+    update_prox_context!,
+    ModelFunction
 
 include("irbp_utils.jl")
 include("irbp_alg.jl")
