@@ -28,70 +28,14 @@ end
 Custom p-norm for real p:
   pnorm(x, p) = (sum(abs.(x).^p))^(1/p)
 """
-function pnorm(x::AbstractVector{T}, p::Real) where {T<:Real}
-    return (sum(abs.(x) .^ p))^(1 / p)
-end
-
-
-"""
-    get_hyperplane_projection(x, weights, radius)
-    Compute the projection of `x` on the hyperplan defined by `weights`.
-"""
-function get_hyperplane_projection(x, weights, radius)
-    eps_val = eps(Float64)
-    numerator = dot(weights, x) - radius
-    denominator = dot(weights, weights)
-    dual = numerator / (denominator + eps_val)
-    x_sub = x .- dual .* weights
-    return x_sub, dual
-end
-
-
-"""
-    get_weightedl1_ball_projection(point_to_be_projected, weights, radius)
-    Compute projection of a vector `point_to_be_projected`
-    on the weighted ℓ1 ball of radius `radius`.
-
-    Returns:
-    - x_opt: the projected point
-    - dual: the associated dual value
-"""
-function get_weightedl1_ball_projection(point_to_be_projected, weights, radius)
-
-    signum_vals = sign.(point_to_be_projected)
-
-    point_to_be_projected_copy = abs.(point_to_be_projected)
-
-    act_ind = trues(length(point_to_be_projected))
-
-    while true
-        point_to_be_projected_copy_act = point_to_be_projected_copy[act_ind]
-        weights_act = weights[act_ind]
-
-        x_sol_hyper, dual =
-            get_hyperplane_projection(point_to_be_projected_copy_act, weights_act, radius)
-
-        # On remet à zéro les valeurs négatives
-        x_sol_hyper_clamped = max.(x_sol_hyper, 0.0)
-        point_to_be_projected_copy_act .= x_sol_hyper_clamped
-
-        # Mise à jour des valeurs dans le vecteur complet
-        point_to_be_projected_copy[act_ind] .= x_sol_hyper_clamped
-
-        # Mise à jour de l'ensemble actif
-        act_ind .= point_to_be_projected_copy .> 0.0
-
-        # Comptage des inactifs (ceux devenus < 0 dans x_sol_hyper)
-        inact_ind_cardinality = sum(x_sol_hyper .< 0.0)
-
-        # Si plus aucun élément n'est supprimé à cette itération, on s'arrête
-        if inact_ind_cardinality == 0
-            # Restaure le signe initial
-            x_opt = point_to_be_projected_copy .* signum_vals
-            return x_opt, dual
-        end
+function pnorm(x::AbstractVector{T}, p::T) where {T<:Real}
+    s = 0.0
+    @inbounds for i = 1:length(x)
+        s += abs(x[i])^p
     end
+    return s^(1 / p)
 end
+
 
 """
     plot_weightedl1_ball_2D(weights, radius; color=:blue)
@@ -157,42 +101,9 @@ end
 # 2. Functions used to communicate with RegularizedOptimization #
 #################################################################
 
-"""
-    ModelFunction{V,P}
-
-Helper structure to store the gradient and proximal term in a compact way.
-Used to avoid memory allocations when calling the proximal callback.
-
-# Fields
-- `∇f::V`: gradient of the function
-- `ψ::P`: proximal term
-"""
-mutable struct ModelFunction{V,P}
-    ∇f::V  # gradient
-    ψ::P   # proximal term
-end
-
-"""
-    ModelFunction(∇f::V, ψ::Function) where {V<:AbstractVector}
-
-Constructor for ModelFunction that creates a structure with a gradient vector and a proximal function.
-"""
-function ModelFunction(∇f::V, ψ::Function) where {V<:AbstractVector}
-    return ModelFunction{V,Function}(∇f, ψ)
-end
-
-"""
-    (m::ModelFunction)(d)
-
-Evaluate the model function at point d by computing the sum of:
-1. The inner product between the gradient and d
-2. The proximal term evaluated at d
-"""
-function (m::ModelFunction)(d)
-    return dot(m.∇f, d) + m.ψ(d)
-end
-
 mutable struct IRBPContext
+    p::Float64
+    radius::Float64
     iters_prox_projLp::Int64
     flag_projLp::Int64
     κξ::Float64
@@ -201,12 +112,38 @@ mutable struct IRBPContext
     shift::Vector{Float64}
     s_k_unshifted::Vector{Float64}
     hk::Float64
-    mk::ModelFunction
+    ∇fk::Vector{Float64}
+
+    # in irbp_alg
+    x_ini::Vector{Float64}
+    rand_num::Vector{Float64}
+    epsilon_ini::Vector{Float64}
+
+    # in get_lp_ball_projection
+    signum_vals::Vector{Float64}
+    yAbs::Vector{Float64}
+    s_k::Vector{Float64}
+    temp_vec::Vector{Float64}
+    weights::Vector{Float64}
+
+    # in get_weightedl1_ball_projection
+    signum_vals_l1::Vector{Float64}
+    point_to_be_projected_l1::Vector{Float64}
+    act_ind_l1::Vector{Bool}
+    point_to_be_projected_act_l1::Vector{Float64}
+    weights_act_l1::Vector{Float64}
+    x_sol_hyper_clamped_l1::Vector{Float64}
+    x_opt_l1::Vector{Float64}
+
+    # in get_hyperplane_projection
+    s_sub::Vector{Float64}
 end
 
 # Fonction that creates an IRBPContext object
 function IRBPContext(
-    n::Int64;
+    n::Int64,
+    p::Float64,
+    radius::Float64;
     iters_prox_projLp = 100,
     flag_projLp = 0,
     κξ = 0.75,
@@ -215,9 +152,27 @@ function IRBPContext(
     shift = zeros(n)
     s_k_unshifted = zeros(n)
     hk = 0.0
-    mk = ModelFunction(zeros(n), x -> x)
+    ∇fk = zeros(n)
     prox_stats = zeros(Int64, 3)
+    x_ini = zeros(n)
+    rand_num = zeros(n)
+    epsilon_ini = zeros(n)
+    signum_vals = zeros(n)
+    yAbs = zeros(n)
+    s_k = zeros(n)
+    temp_vec = zeros(n)
+    weights = zeros(n)
+    signum_vals_l1 = zeros(n)
+    point_to_be_projected_l1 = zeros(n)
+    act_ind_l1 = trues(n)
+    point_to_be_projected_act_l1 = zeros(n)
+    weights_act_l1 = zeros(n)
+    x_sol_hyper_clamped_l1 = zeros(n)
+    x_opt_l1 = zeros(n)
+    s_sub = zeros(n)
     return IRBPContext(
+        p,
+        radius,
         iters_prox_projLp,
         flag_projLp,
         κξ,
@@ -226,9 +181,26 @@ function IRBPContext(
         shift,
         s_k_unshifted,
         hk,
-        mk,
+        ∇fk,
+        x_ini,
+        rand_num,
+        epsilon_ini,
+        signum_vals,
+        yAbs,
+        s_k,
+        temp_vec,
+        weights,
+        signum_vals_l1,
+        point_to_be_projected_l1,
+        act_ind_l1,
+        point_to_be_projected_act_l1,
+        weights_act_l1,
+        x_sol_hyper_clamped_l1,
+        x_opt_l1,
+        s_sub,
     )
 end
+
 
 """
     ProjLpBall(λ, p, radius, context)
@@ -250,6 +222,15 @@ mutable struct ProjLpBall{R<:Real}
 end
 
 """
+    ProjLpBall(λ, p, radius, n)
+    Constructor for the ProjLpBall object.
+"""
+function ProjLpBall(λ, p, radius, n)
+    context = IRBPContext(n, p, radius)
+    return ProjLpBall(λ, p, radius, context)
+end
+
+"""
     (h::ProjLpBall)(x::AbstractVector)
     Indicator function for the p-ball.
     Returns zero if the point is inside the ball, Inf otherwise.
@@ -257,7 +238,16 @@ end
     This function is the "h" function in the RegularizedOptimization.jl framework.
 """
 function (h::ProjLpBall)(x::AbstractVector; ϵ::Real = eps()^(1 / 2))
-    pnorm(x, h.p)^(h.p) <= (h.radius + ϵ) ? 0.0 : Inf
+    return indicator_function(x, h.p, h.radius; ϵ = ϵ)
+end
+
+function indicator_function(
+    x::AbstractVector,
+    p::Real,
+    radius::Real;
+    ϵ::Real = eps()^(1 / 2),
+)
+    pnorm(x, p)^(p) <= (radius + ϵ) ? 0.0 : Inf
 end
 
 mutable struct ShiftedProjLpBall{
@@ -342,8 +332,7 @@ Updates the context of a ShiftedProjLpBall object before calling prox!.
 """
 function update_prox_context!(solver, stats, ψ::ShiftedProjLpBall)
     ψ.h.context.hk = stats.solver_specific[:nonsmooth_obj]
-    ψ.h.context.mk.∇f = solver.∇fk
-    ψ.h.context.mk.ψ = d -> ψ(d)  # Use the evaluation function of ψ instead of the object itself
+    ψ.h.context.∇fk = solver.∇fk
     @. ψ.h.context.shift = ψ.xk + ψ.sj
 end
 
@@ -404,9 +393,10 @@ function prox!(y::AbstractArray, ψ::ShiftedProjLpBall, q::AbstractArray, ν::Re
 
         # compute model reduction
         context.s_k_unshifted .= x_irbp .- context.shift
-        ξk =
-            context.hk - context.mk(context.s_k_unshifted) +
-            max(1, abs(context.hk)) * 10 * eps()
+        ϕk_val = dot(context.∇fk, context.s_k_unshifted)
+        ψk_val = indicator_function(context.s_k_unshifted, ψ.h.p, ψ.h.radius)
+        mk_val = ϕk_val + ψk_val
+        ξk = context.hk - mk_val + max(1, abs(context.hk)) * 10 * eps()
 
         # update best solution
         if ξk > 0
