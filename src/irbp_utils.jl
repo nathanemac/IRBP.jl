@@ -113,6 +113,7 @@ mutable struct IRBPContext
     s_k_unshifted::Vector{Float64}
     hk::Float64
     ∇fk::Vector{Float64}
+    q_shifted::Vector{Float64}
 
     # in irbp_alg
     x_ini::Vector{Float64}
@@ -136,7 +137,7 @@ mutable struct IRBPContext
     x_opt_l1::Vector{Float64}
 
     # in get_hyperplane_projection
-    s_sub::Vector{Float64}
+    s_sub::Vector{Float64} # buffer result
 end
 
 # Fonction that creates an IRBPContext object
@@ -150,6 +151,7 @@ function IRBPContext(
     dualGap = 1e-8,
 )
     shift = zeros(n)
+    q_shifted = zeros(n)
     s_k_unshifted = zeros(n)
     hk = 0.0
     ∇fk = zeros(n)
@@ -182,6 +184,7 @@ function IRBPContext(
         s_k_unshifted,
         hk,
         ∇fk,
+        q_shifted,
         x_ini,
         rand_num,
         epsilon_ini,
@@ -359,8 +362,6 @@ function prox!(y::AbstractArray, h::ProjLpBall, q::AbstractArray, ν::Real)
     return y
 end
 
-
-
 """
     prox!(y, h::ShiftedProjLpBall, q, ν, ctx_ptr, callback)
     Evaluates inexactly the proximity operator of a shifted LpBall object.
@@ -374,7 +375,7 @@ end
 """
 function prox!(y::AbstractArray, ψ::ShiftedProjLpBall, q::AbstractArray, ν::Real)
     context = ψ.h.context
-    q_shifted = q .+ context.shift
+    @. context.q_shifted = q + context.shift
     cond = false
     k = 0
     sum_iters = 0
@@ -382,7 +383,7 @@ function prox!(y::AbstractArray, ψ::ShiftedProjLpBall, q::AbstractArray, ν::Re
     while (cond == false) && (k ≤ context.iters_prox_projLp)
         # compute solution of the proximal operator of the shifted Lp ball
         x_irbp, dual_val, iters, _ = irbp_alg(
-            q_shifted,
+            context.q_shifted,
             ψ.h.p,
             ψ.h.radius,
             context,
@@ -408,9 +409,8 @@ function prox!(y::AbstractArray, ψ::ShiftedProjLpBall, q::AbstractArray, ν::Re
     # add the number of iterations in prox to the context object
     context.prox_stats[3] += sum_iters
 
-    cond == false ?
-    println(
-        "Warning: Lp ball - prox computation could not find a feasible solution after $(context.iters_prox_projLp) runs.",
-    ) : nothing # println("Lp ball - prox computation found a feasible solution : ξk = $best_ξk")
+    if cond == false
+        @warn "Lp ball - prox computation could not find a feasible solution after $(context.iters_prox_projLp) runs."
+    end
     return y
 end

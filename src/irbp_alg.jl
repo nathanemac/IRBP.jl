@@ -1,13 +1,13 @@
 """
-    get_hyperplane_projection!(x, w, m, radius, s_sub) -> (s_sub, dual)
-    Compute the projection of `x` on the hyperplan defined by `weights`.
+    get_hyperplane_projection!(x, w, m, radius, s_sub) -> (dual)
+    Compute the projection of `x` on the hyperplan defined by `weights` and stores the result in `s_sub`.
 """
 @inline function get_hyperplane_projection!(
-    x::AbstractVector{T},   # données actives
-    w::AbstractVector{T},   # poids actifs
-    m::Int,                 # nb d’éléments actifs
+    x::AbstractVector{T},
+    w::AbstractVector{T},
+    m::Int,
     radius::T,
-    s_sub::AbstractVector{T},   # buffer résultat (longueur ≥ m)
+    s_sub::AbstractVector{T},
 ) where {T<:Float64}
 
     # -- dual ---------------------------------------------------------------
@@ -20,11 +20,11 @@
     end
     dual = (num - radius) / (den + eps(T))
 
-    # -- projection dans s_sub ----------------------------------------------
+    # -- projection ----------------------------------------------
     @inbounds @simd for i = 1:m
         s_sub[i] = x[i] - dual * w[i]
     end
-    return dual          # s_sub contient la projection
+    return dual
 end
 
 
@@ -66,7 +66,7 @@ function get_weightedl1_ball_projection(context, radius)
             context.weights_act_l1,
             m,
             radius,
-            context.s_sub,          # <- résultat
+            context.s_sub,
         )
 
         # -------- clamp + scatter -----------------------------------------
@@ -91,69 +91,9 @@ function get_weightedl1_ball_projection(context, radius)
                 context.x_opt_l1[i] =
                     context.point_to_be_projected_l1[i] * context.signum_vals_l1[i]
             end
-            return context.x_opt_l1, dual
+            return dual
         end
     end
-end
-
-"""
-    irbp_alg(
-    point_to_be_projected::Vector{Float64},
-    p::Float64,
-    radius::Float64;
-    dualGap = 1e-8,
-    maxIter = 1000,
-)
-
-This function initializes an IRBP iteration for projecting a point onto the p-ball of radius `radius`.
-It returns the projected point `x_irbp`, the dual variable `dual`, and the total running time.
-
-Arguments:
-  - point_to_be_projected : The point to be projected (Vector).
-  - p                     : The p-parameter for the lp-ball.
-  - radius               : The radius of the lp-ball.
-
-Returns:
-  - x_irbp    : The projection of the point onto the lp-ball.
-  - dual      : The dual variable from the IRBP solver.
-  - runningTime : Time elapsed (in seconds) during the IRBP process.
-"""
-function irbp_alg(
-    point_to_be_projected::Vector{Float64},
-    p::Float64,
-    radius::Float64,
-    context::IRBPContext;
-    dualGap = 1e-8,
-    maxIter = 1000,
-)
-    # Dimension of the data
-    data_dim = length(point_to_be_projected)
-
-    # Create a random vector in [0,1] for initialization
-    @. context.rand_num = rand()
-    rand_num_norm = pnorm(context.rand_num, 1.0)
-
-    # Slightly shrink the random vector to ensure feasibility (according to paper)
-    # (raised to the power 1/p)
-    @inbounds for i in eachindex(context.rand_num)
-        context.epsilon_ini[i] =
-            0.9 * (context.rand_num[i] * radius / rand_num_norm)^(1.0 / p)
-    end
-
-    # Call the IRBP-based projection on lp-ball
-    x_irbp, dual, iters, runningTime = get_lp_ball_projection(
-        context.x_ini,
-        point_to_be_projected,
-        p,
-        radius,
-        context.epsilon_ini,
-        context;
-        tau = 1.1,
-        tol = dualGap,
-        MAX_ITER = maxIter,
-    )
-
-    return x_irbp, dual, iters, runningTime
 end
 
 
@@ -224,9 +164,9 @@ function get_lp_ball_projection(
     lamb = 0.0
 
     # Initial residuals for alpha and beta
-    @. context.temp_vec = (context.yAbs - starting_point) * starting_point
+    @. context.temp_vec = (context.yAbs - context.x_ini) * context.x_ini
     residual_alpha0 = (1.0 / n) * pnorm(context.temp_vec, 1.0)
-    residual_beta0 = abs(pnorm(starting_point, p)^p - radius)
+    residual_beta0 = abs(pnorm(context.x_ini, p)^p - radius)
 
     # Counter for iterations
     cnt = 0
@@ -243,20 +183,20 @@ function get_lp_ball_projection(
 
         # Compute current residuals
         @. context.temp_vec =
-            (context.yAbs - starting_point) * starting_point - p * lamb * (starting_point^p)
+            (context.yAbs - context.x_ini) * context.x_ini - p * lamb * (context.x_ini^p)
         alpha_res = (1.0 / n) * pnorm(context.temp_vec, 1.0)
-        beta_res = abs(pnorm(starting_point, p)^p - radius)
+        beta_res = abs(pnorm(context.x_ini, p)^p - radius)
 
         if context.flag_projLp == 1 # original IRBP criterion
             if max(alpha_res, beta_res) <
                tol * max(max(residual_alpha0, residual_beta0), 1.0) || cnt > MAX_ITER
                 timeEnd = time()
-                x_final = context.signum_vals .* starting_point  # Restore original sign
+                x_final = context.signum_vals .* context.x_ini  # Restore original sign
                 return x_final, lamb, cnt, (timeEnd - timeStart)
             end
         else # stopping condition that respects our assumptions on inexact prox computation
             delta_k = max(alpha_res, beta_res)
-            @. context.s_k = context.signum_vals * starting_point
+            @. context.s_k = context.signum_vals * context.x_ini
 
             @. context.s_k_unshifted = context.s_k - context.shift
             ϕk_val = dot(context.∇fk, context.s_k_unshifted)
@@ -273,7 +213,7 @@ function get_lp_ball_projection(
         # Step 3 in IRBP: compute the weights
         # weights_i = p / (|x_i| + epsilon)^(1-p)
         # Add 1e-12 to avoid division by zero in the denominator
-        @. context.temp_vec = abs(starting_point) + epsilon
+        @. context.temp_vec = abs(context.x_ini) + epsilon
         @. context.weights = p * (1.0 ./ ((context.temp_vec) .^ (1.0 - p) .+ 1e-12))
 
         # Step 4 in IRBP: compute gamma_k
@@ -287,15 +227,22 @@ function get_lp_ball_projection(
 
         # Subproblem solver:
         # Weighted L1-ball projection of yAbs with weights and gamma_k
-        x_new, lamb = get_weightedl1_ball_projection(context, gamma_k)
+        # the result is stored in context.x_opt_l1
+        lamb = get_weightedl1_ball_projection(context, gamma_k)
 
         # Replace any NaN values by zero (if any)
-        x_new[isnan.(x_new)] .= 0.0
+        @inbounds @simd for i in eachindex(context.x_opt_l1)
+            if isnan(context.x_opt_l1[i])
+                context.x_opt_l1[i] = 0.0
+            end
+        end
 
         # Step 5 in IRBP: update epsilon if condition_left <= condition_right
-        condition_left =
-            norm(x_new .- starting_point, 2) *
-            (norm(sign.(x_new .- starting_point) .* context.weights, 2)^tau)
+        @. context.temp_vec = context.x_opt_l1 - context.x_ini
+        norm_aux1 = pnorm(context.temp_vec, 2.0)
+        @. context.temp_vec = sign(context.temp_vec) * context.weights
+        norm_aux2 = pnorm(context.temp_vec, 2.0)
+        condition_left = (norm_aux1) * (norm_aux2)^tau
 
         if condition_left <= condition_right
             # Update factor for epsilon
@@ -304,10 +251,10 @@ function get_lp_ball_projection(
         end
 
         # Step 6 in IRBP: update the iterate
-        starting_point = copy(x_new)
+        context.x_ini .= context.x_opt_l1
 
         # if cnt % 10 == 0
-        #     x_signed = signum_vals .* starting_point
+        #     x_signed = signum_vals .* context.x_ini
         #     scatter!(
         #         plt,
         #         [x_signed[1]],
@@ -318,10 +265,9 @@ function get_lp_ball_projection(
         # end
     end
 
-    # println("IRBP did not converge after $MAX_ITER iterations with α: $alpha_res, β: $beta_res and criterion: $((1 - context.κξ) / context.κξ * ξk)")
-    # println("hk = $(context.hk), mk = $(context.mk(context.s_k_unshifted))")
+    # Final result: restore the original sign
     timeEnd = time()
-    x_final = context.signum_vals .* starting_point
+    @. context.s_k = context.signum_vals * context.x_ini
 
 
     # scatter!(
@@ -332,5 +278,67 @@ function get_lp_ball_projection(
     #     label = "Final point ($(x_final[1]), $(x_final[2]))"
     #     )
     # display(plt)
-    return x_final, lamb, cnt, (timeEnd - timeStart)
+    return context.s_k, lamb, cnt, (timeEnd - timeStart)
+end
+
+"""
+    irbp_alg(
+    point_to_be_projected::Vector{Float64},
+    p::Float64,
+    radius::Float64;
+    dualGap = 1e-8,
+    maxIter = 1000,
+)
+
+This function initializes an IRBP iteration for projecting a point onto the p-ball of radius `radius`.
+It returns the projected point `x_irbp`, the dual variable `dual`, and the total running time.
+
+Arguments:
+  - point_to_be_projected : The point to be projected (Vector).
+  - p                     : The p-parameter for the lp-ball.
+  - radius               : The radius of the lp-ball.
+
+Returns:
+  - x_irbp    : The projection of the point onto the lp-ball.
+  - dual      : The dual variable from the IRBP solver.
+  - runningTime : Time elapsed (in seconds) during the IRBP process.
+"""
+function irbp_alg(
+    point_to_be_projected::Vector{Float64},
+    p::Float64,
+    radius::Float64,
+    context::IRBPContext;
+    dualGap = 1e-8,
+    maxIter = 1000,
+)
+    # Dimension of the data
+    data_dim = length(point_to_be_projected)
+
+    # Create a random vector in [0,1] for initialization
+    @. context.rand_num = rand()
+    rand_num_norm = pnorm(context.rand_num, 1.0)
+
+    # Slightly shrink the random vector to ensure feasibility (according to paper)
+    # (raised to the power 1/p)
+    @inbounds for i in eachindex(context.rand_num)
+        context.epsilon_ini[i] =
+            0.9 * (context.rand_num[i] * radius / rand_num_norm)^(1.0 / p)
+    end
+
+    context.x_ini .= 0.0
+
+    # Call the IRBP-based projection on lp-ball
+    x_irbp, dual, iters, runningTime = get_lp_ball_projection(
+        context.x_ini,
+        point_to_be_projected,
+        p,
+        radius,
+        context.epsilon_ini,
+        context;
+        tau = 1.1,
+        tol = dualGap,
+        MAX_ITER = maxIter,
+    )
+
+    return x_irbp, dual, iters, runningTime
 end
