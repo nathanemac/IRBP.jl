@@ -210,6 +210,7 @@ function get_lp_ball_projection(
         end
 
 
+
         # Step 3 in IRBP: compute the weights
         # weights_i = p / (|x_i| + epsilon)^(1-p)
         # Add 1e-12 to avoid division by zero in the denominator
