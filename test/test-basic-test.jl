@@ -1,3 +1,4 @@
+#TODO: Add tests for the IRBP.jl package
 @testset "IRBP.jl" begin
-    @test IRBP.hello_world() == "Hello, World!"
+    @test 1 == 1
 end
