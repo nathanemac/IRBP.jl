@@ -1,7 +1,6 @@
 module IRBP
 
 using LinearAlgebra
-using Plots
 using ProxTV
 
 # import functions that we extend from ShiftedProximalOperators and ProxTV
