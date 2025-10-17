@@ -203,7 +203,12 @@ function get_lp_ball_projection(
             ψk_val = indicator_function(context.s_k_unshifted, context.p, context.radius)
             mk_val = ϕk_val + ψk_val
             ξk = context.hk - mk_val + max(1, abs(context.hk)) * 10 * eps()
-            if delta_k ≤ (1 - context.κξ) / context.κξ * ξk
+
+            s_norm = norm(context.s_k_unshifted)
+
+            if delta_k ≤
+               (1 - context.κξ) / context.κξ * ξk + 1 / (2 * context.ν) * s_norm^2 &&
+               ξk >= 0
                 timeEnd = time()
                 return context.s_k, lamb, cnt, (timeEnd - timeStart)
             end
