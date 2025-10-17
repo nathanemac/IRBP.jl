@@ -126,6 +126,7 @@ mutable struct IRBPContext
     s_k::Vector{Float64}
     temp_vec::Vector{Float64}
     weights::Vector{Float64}
+    ν::Float64
 
     # in get_weightedl1_ball_projection
     signum_vals_l1::Vector{Float64}
@@ -172,6 +173,7 @@ function IRBPContext(
     x_sol_hyper_clamped_l1 = zeros(n)
     x_opt_l1 = zeros(n)
     s_sub = zeros(n)
+    ν = 1.0
     return IRBPContext(
         p,
         radius,
@@ -193,6 +195,7 @@ function IRBPContext(
         s_k,
         temp_vec,
         weights,
+        ν,
         signum_vals_l1,
         point_to_be_projected_l1,
         act_ind_l1,
@@ -379,6 +382,8 @@ function prox!(y::AbstractArray, ψ::ShiftedProjLpBall, q::AbstractArray, ν::Re
     cond = false
     k = 0
     sum_iters = 0
+
+    ψ.h.context.ν = ν
 
     while (cond == false) && (k ≤ context.iters_prox_projLp)
         # compute solution of the proximal operator of the shifted Lp ball

@@ -1,7 +1,7 @@
 name = "IRBP"
 uuid = "04b49ee4-b9c7-538e-b9b0-cc085f9e0210"
 authors = ["Nathan Allaire <nathan.allaire@polymtl.ca>"]
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
 JuliaFormatter = "98e50ef6-434e-11e9-1051-2b60c6c9e899"
