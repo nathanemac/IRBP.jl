@@ -139,6 +139,13 @@ mutable struct IRBPContext
 
     # in get_hyperplane_projection
     s_sub::Vector{Float64} # buffer result
+
+    # for prox stats
+    prox_calls_outer::Int64
+    prox_calls_inner::Int64
+    prox_iters_outer::Int64
+    prox_iters_inner::Int64
+    last_prox_iters::Int64
 end
 
 # Fonction that creates an IRBPContext object
@@ -174,6 +181,11 @@ function IRBPContext(
     x_opt_l1 = zeros(n)
     s_sub = zeros(n)
     ν = 1.0
+    prox_calls_outer = 0
+    prox_calls_inner = 0
+    prox_iters_outer = 0
+    prox_iters_inner = 0
+    last_prox_iters = 0
     return IRBPContext(
         p,
         radius,
@@ -204,6 +216,11 @@ function IRBPContext(
         x_sol_hyper_clamped_l1,
         x_opt_l1,
         s_sub,
+        prox_calls_outer,
+        prox_calls_inner,
+        prox_iters_outer,
+        prox_iters_inner,
+        last_prox_iters,
     )
 end
 
@@ -360,6 +377,7 @@ function prox!(y::AbstractArray, h::ProjLpBall, q::AbstractArray, ν::Real)
         irbp_alg(q, h.p, h.radius, h.context, dualGap = h.context.dualGap, maxIter = 1000)
     y .= x_irbp
     # add the number of iterations in prox to the context object
+    h.context.last_prox_iters = iters
     h.context.prox_stats[3] += iters
     h.context.flag_projLp = ctx_projLpflag # restore the original flag_projLp value
     return y
@@ -412,6 +430,7 @@ function prox!(y::AbstractArray, ψ::ShiftedProjLpBall, q::AbstractArray, ν::Re
     end
     y .= context.s_k_unshifted
     # add the number of iterations in prox to the context object
+    context.last_prox_iters = sum_iters
     context.prox_stats[3] += sum_iters
 
     if cond == false
