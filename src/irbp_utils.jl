@@ -106,7 +106,7 @@ mutable struct IRBPContext
     radius::Float64
     iters_prox_projLp::Int64
     flag_projLp::Int64
-    κξ::Float64
+    κs::Float64
     dualGap::Float64
     prox_stats::Vector{Int64}
     shift::Vector{Float64}
@@ -155,7 +155,7 @@ function IRBPContext(
     radius::Float64;
     iters_prox_projLp = 100,
     flag_projLp = 0,
-    κξ = 0.75,
+    κs = 0.75,
     dualGap = 1e-8,
 )
     shift = zeros(n)
@@ -191,7 +191,7 @@ function IRBPContext(
         radius,
         iters_prox_projLp,
         flag_projLp,
-        κξ,
+        κs,
         dualGap,
         prox_stats,
         shift,
