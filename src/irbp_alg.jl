@@ -207,7 +207,7 @@ function get_lp_ball_projection(
             s_norm = norm(context.s_k_unshifted)
             bound_s = norm(context.shift) + context.radius^(1 / context.p)
 
-            if s_norm ≥ context.κs * bound_s
+            if s_norm ≥ context.κs * bound_s && ξk > 0
                 timeEnd = time()
                 return context.s_k, lamb, cnt, (timeEnd - timeStart)
             end
